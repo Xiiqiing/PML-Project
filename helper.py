@@ -226,3 +226,30 @@ def quantitative_assessment_Dirichlet(dataset, model, experimental_data, alpha, 
                     log_x_mt_ELBO, _, _ = model(new_sequence, alpha, sample_size)
                     predicted_value.append((log_x_mt_ELBO - log_x_wt_ELBO).item())
     return spearmanr(experiment_value, predicted_value)
+
+
+def check_reconstruct_iwae(dataset, model):
+    acc = []
+    for i in range(len(dataset)):
+        raw_sequence = dataset[i][0][np.newaxis, :].to('cuda' if torch.cuda.is_available() else 'cpu')
+        z_mu, _ = model.encoder(raw_sequence)
+        acc.append(torch.argmax(model.decoder(z_mu), dim=-1) == raw_sequence)
+    acc = np.mean(torch.cat(acc, dim=0).cpu().numpy())
+    return acc
+
+def quantitative_assessment_iwae(dataset, model, experimental_data, sample_size_l, sample_size_k):
+    raw_sequence = dataset[0][0][np.newaxis, :].to('cuda' if torch.cuda.is_available() else 'cpu')
+    experiment_value = []
+    predicted_value = []
+    with torch.no_grad():
+        log_x_wt_ELBO, _, _ = model(raw_sequence, sample_size_l, sample_size_k)
+        for (position, mutant_from), row in experimental_data.iterrows():
+            assert aa1_to_index[mutant_from] == raw_sequence[0, position]
+            for mutant_to, exp_value in row.iteritems():
+                if mutant_to != mutant_from:
+                    new_sequence = raw_sequence.clone()
+                    new_sequence[0, position] = aa1_to_index[mutant_to]
+                    experiment_value.append(exp_value)
+                    log_x_mt_ELBO, _, _ = model(new_sequence, sample_size_l, sample_size_k)
+                    predicted_value.append((log_x_mt_ELBO - log_x_wt_ELBO).item())
+    return spearmanr(experiment_value, predicted_value)
